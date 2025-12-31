@@ -5,37 +5,46 @@ import io
 
 app = FastAPI()
 
-# Load your custom trained model
-# This runs once when the server starts
-model = YOLO("car_damage_v1.pt")
+# Load the model (Ensure car_damage_v1.pt is in the same folder)
+# If you don't have the file yet, comment this line out to test the server first
+try:
+    model = YOLO("car_damage_v1.pt")
+    print("✅ Model loaded successfully!")
+except:
+    print("⚠️ Model file not found. Please download 'best.pt' from Kaggle.")
+    model = None
 
 @app.get("/")
 def home():
     return {"message": "RepairJust AI is Active 🚗"}
 
-@app.post("/detect")
-async def detect_damage(file: UploadFile = File(...)):
-    # 1. Read the image file sent from the app
+@app.post("/predict")
+async def predict(file: UploadFile = File(...)):
+    if model is None:
+        return {"error": "Model not loaded. Check server logs."}
+
+    # 1. Read the image
     image_bytes = await file.read()
     image = Image.open(io.BytesIO(image_bytes))
 
-    # 2. Feed it to the AI
+    # 2. Run the AI
     results = model.predict(image, conf=0.25)
 
-    # 3. Format the results for the mobile app
+    # 3. Extract Data
     detections = []
     for result in results:
         for box in result.boxes:
-            # Get coordinates and label
-            x1, y1, x2, y2 = box.xyxy[0].tolist()
-            confidence = float(box.conf[0])
             class_id = int(box.cls[0])
-            label_name = model.names[class_id]
-
+            label = model.names[class_id]
+            confidence = float(box.conf[0])
+            
             detections.append({
-                "damage_type": label_name,
-                "confidence": round(confidence, 2),
-                "bbox": [x1, y1, x2, y2]
+                "damage": label,
+                "confidence": round(confidence, 2)
             })
 
-    return {"status": "success", "detections": detections}
+    return {
+        "filename": file.filename,
+        "detections": detections,
+        "total_damages": len(detections)
+    }
